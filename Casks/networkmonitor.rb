@@ -17,17 +17,29 @@ cask "networkmonitor" do
 
   app "NetworkMonitor.app"
 
-  # The LaunchAgent that versions before the SMAppService login item installed.
+  # Quit first, then put back what Hotspot mode changed (its helper's changes
+  # too), from the app's own record, while the app that reads it is still there,
+  # as Scripts/uninstall.sh does. The launchctl label is the LaunchAgent that
+  # versions before the SMAppService login item installed.
   uninstall launchctl: "com.kevinabouhanna.NetworkMonitor",
-            quit:      "com.kevinabouhanna.NetworkMonitor"
+            quit:      "com.kevinabouhanna.NetworkMonitor",
+            script:    {
+              executable:   "/bin/sh",
+              args:         [
+                "-c",
+                '[ -x "$0" ] && "$0" --revert-metering; exit 0',
+                "#{appdir}/NetworkMonitor.app/Contents/MacOS/NetworkMonitor",
+              ],
+              must_succeed: false,
+            }
 
-  # Puts back what Hotspot mode changed without its helper, from the app's own
-  # record, while the app (which can read it) is still there; as Scripts/uninstall.sh does.
+  # Withdraws the login item and the helper's registration, which only the app
+  # can do. Here rather than in `uninstall`, so a reinstall keeps them.
   zap script: {
         executable:   "/bin/sh",
         args:         [
           "-c",
-          '[ -x "$0" ] && "$0" --revert-metering || true',
+          '[ -x "$0" ] && "$0" --unregister-login-item; exit 0',
           "#{appdir}/NetworkMonitor.app/Contents/MacOS/NetworkMonitor",
         ],
         must_succeed: false,
