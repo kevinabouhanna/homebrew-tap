@@ -13,13 +13,13 @@ cask "networkmonitor" do
   end
 
   auto_updates true
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "NetworkMonitor.app"
 
   # The LaunchAgent that versions before the SMAppService login item installed.
-  uninstall quit:      "com.kevinabouhanna.NetworkMonitor",
-            launchctl: "com.kevinabouhanna.NetworkMonitor"
+  uninstall launchctl: "com.kevinabouhanna.NetworkMonitor",
+            quit:      "com.kevinabouhanna.NetworkMonitor"
 
   # Puts back what Hotspot mode changed without its helper, from the app's own
   # record, while the app (which can read it) is still there; as Scripts/uninstall.sh does.
