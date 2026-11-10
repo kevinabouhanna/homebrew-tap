@@ -1,0 +1,78 @@
+# Keeps Casks/networkmonitor.rb on NetworkMonitor's latest release.
+#
+# Daily, or at once with `gh workflow run bump.yml -R kevinabouhanna/homebrew-tap`.
+# It reads the latest release, and when it's newer than the cask, downloads its
+# disk image, writes the new version and SHA-256, and commits to main with this
+# repository's own GITHUB_TOKEN: no secrets.
+name: Bump cask
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bump
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compare the cask with the latest release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cask=Casks/networkmonitor.rb
+          current=$(sed -nE 's/^  version "([^"]+)"$/\1/p' "$cask")
+          tag=$(gh release view -R kevinabouhanna/NetworkMonitor --json tagName -q .tagName)
+          latest=${tag#v}
+          echo "cask: $current, latest release: $latest"
+          if [ -z "$current" ] || [ -z "$latest" ]; then
+            echo "::error::couldn't read a version (cask: '$current', release: '$tag')"; exit 1
+          fi
+          # Newer only: never move the cask back to an older release.
+          newest=$(printf '%s\n%s\n' "$current" "$latest" | sort -V | tail -n1)
+          if [ "$latest" = "$current" ] || [ "$newest" != "$latest" ]; then
+            echo "Nothing to do."
+            echo "bump=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "bump=true" >> "$GITHUB_OUTPUT"
+            echo "version=$latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Update the version and SHA-256
+        if: steps.check.outputs.bump == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          url="https://github.com/kevinabouhanna/NetworkMonitor/releases/download/v${VERSION}/NetworkMonitor.dmg"
+          curl --fail --location --silent --show-error --retry 3 -o "$RUNNER_TEMP/NetworkMonitor.dmg" "$url"
+          sha=$(sha256sum "$RUNNER_TEMP/NetworkMonitor.dmg" | cut -d' ' -f1)
+          echo "v${VERSION}: $sha"
+          sed -i -E \
+            -e "s/^  version \"[^\"]+\"$/  version \"${VERSION}\"/" \
+            -e "s/^  sha256 \"[0-9a-f]{64}\"$/  sha256 \"${sha}\"/" \
+            Casks/networkmonitor.rb
+          grep -q "^  version \"${VERSION}\"$" Casks/networkmonitor.rb
+          grep -q "^  sha256 \"${sha}\"$" Casks/networkmonitor.rb
+
+      - name: Commit to main
+        if: steps.check.outputs.bump == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/networkmonitor.rb
+          git commit -m "networkmonitor ${VERSION}"
+          git push origin HEAD:main
